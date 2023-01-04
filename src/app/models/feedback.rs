@@ -1,11 +1,13 @@
+use crate::app::forms::feedback::DeviceDetailsForm;
+use crate::diesel::GroupedBy;
 use crate::schema::feedbacks::dsl::feedbacks as feedbacks_dsl;
 use crate::{app::forms::feedback::FeedbackForm, schema::feedbacks};
-use diesel::{RunQueryDsl, SqliteConnection};
+use diesel::{BelongingToDsl, RunQueryDsl, SqliteConnection};
 use serde::{Deserialize, Serialize};
 
-use super::exception::Exception;
+use crate::app::models::exception::Exception;
 
-#[derive(Debug, Deserialize, Serialize, Queryable, Insertable)]
+#[derive(Debug, Deserialize, Serialize, Queryable, Insertable, Identifiable)]
 #[diesel(table_name = feedbacks)]
 pub struct Feedback {
     pub id: Option<i32>,
@@ -19,10 +21,37 @@ pub struct Feedback {
 }
 
 impl Feedback {
-    pub fn list(conn: &mut SqliteConnection) -> Vec<Self> {
-        feedbacks_dsl
-            .load::<Feedback>(conn)
-            .expect("Error loading feedbacks")
+    pub fn list(conn: &mut SqliteConnection) -> Vec<FeedbackForm> {
+        let feedbacks = feedbacks_dsl.load::<Feedback>(conn).unwrap();
+        let exceptions = Exception::belonging_to(&feedbacks)
+            .load::<Exception>(conn)
+            .unwrap()
+            .grouped_by(&feedbacks);
+
+        let data = feedbacks.into_iter().zip(exceptions).collect::<Vec<_>>();
+
+        let mut feedbacks: Vec<FeedbackForm> = vec![];
+
+        for feedback in data {
+            let form = FeedbackForm {
+                category: feedback.0.category,
+                email: feedback.0.email,
+                message: feedback.0.message,
+                device_details: match feedback.0.version_name.clone() {
+                    Some(_) => Some(DeviceDetailsForm {
+                        version_name: feedback.0.version_name.unwrap(),
+                        platform: feedback.0.platform.unwrap().try_into().unwrap(),
+                        platform_version: feedback.0.platform_version.unwrap(),
+                        branch: feedback.0.branch.unwrap(),
+                    }),
+                    None => None,
+                },
+                exceptions: feedback.1.iter().map(|f| f.stack_trace.clone()).collect(),
+            };
+            feedbacks.push(form);
+        }
+
+        feedbacks
     }
 
     pub fn create(feedback_form: FeedbackForm, conn: &mut SqliteConnection) -> Self {

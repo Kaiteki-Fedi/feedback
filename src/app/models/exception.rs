@@ -1,9 +1,11 @@
+use crate::app::models::feedback::Feedback;
 use crate::schema::exceptions::dsl::exceptions as exceptions_dsl;
 use crate::{schema::exceptions, utils::calculate_hash};
 use diesel::{RunQueryDsl, SqliteConnection};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize, Queryable, Insertable)]
+#[derive(Debug, Deserialize, Serialize, Queryable, Insertable, Identifiable, Associations)]
+#[diesel(belongs_to(Feedback, foreign_key = id))]
 #[diesel(table_name = exceptions)]
 pub struct Exception {
     pub id: Option<i32>,
